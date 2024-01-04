@@ -21,44 +21,49 @@ db.connect((err) => {
   }
 });
 
-// Ruta para obtener datos de georreferenciación
 app.get('/datos/:usuario', async (req, res) => {
-  const usuario = req.params.usuario;
-
-  // Consultar la ciudad del usuario en la base de datos
-  db.query('SELECT ciudad FROM clientes_isp2.clientes WHERE usuario = ?', [usuario], async (err, results) => {
-    if (err) {
-      console.error('Error al consultar la base de datos:', err);
-      res.status(500).send('Error interno del servidor');
-      return;
-    }
-
-    if (results.length === 0) {
+    const usuario = req.params.usuario;
+  
+    // Consultar la ciudad y el id de la tabla 'clientes'
+    db.query('SELECT id, ciudad FROM clientes_isp2.clientes WHERE usuario = ?', [usuario], async (err, results) => {
+      if (err) {
+        console.error('Error al consultar la base de datos:', err);
+        res.status(500).send('Error interno del servidor');
+        return;
+      }
+  
+      if (results.length === 0) {
         console.error(`Usuario '${usuario}' no encontrado en la base de datos`);
-      res.status(404).send('Usuario no encontrado');
-      return;
-    }
-
-    const ciudad = results[0].ciudad;
-
-    // Consultar la georreferenciación utilizando el API de Geocode.xyz
-    try {
-      const response = await axios.get(`https://geocode.xyz/${ciudad}?json=1&auth=587409135294191706253x65590`);
-      // Actualizar el campo 'json' en la tabla 'ciudad'
-      db.query('UPDATE clientes_isp2.ciudades SET json = ? WHERE ciudad = ?', [JSON.stringify(response.data), ciudad], (updateErr) => {
-        if (updateErr) {
-          console.error('Error al actualizar la base de datos:', updateErr);
-          res.status(500).send('Error interno del servidor update');
-        } else {
-          res.json(response.data);
-        }
-      });
-    } catch (error) {
-      console.error('Error al consultar el API de Geocode.xyz:', error.message);
-      res.status(500).send('Error interno del servidor');
-    }
+        res.status(404).send('Usuario no encontrado');
+        return;
+      }
+  
+      const clienteId = results[0].id;
+      const ciudad = results[0].ciudad;
+  
+      // Consultar la georreferenciación utilizando el API de Geocode.xyz
+      try {
+        const response = await axios.get(`https://geocode.xyz/${ciudad}?json=1&auth=587409135294191706253x65590`);
+  
+        // Crear o actualizar el registro en la tabla 'ciudades'
+        db.query(
+          'INSERT INTO clientes_isp2.ciudades (ciudad, json) VALUES (?, ?) ON DUPLICATE KEY UPDATE json = ?',
+          [ciudad, JSON.stringify(response.data), JSON.stringify(response.data)],
+          (insertUpdateErr) => {
+            if (insertUpdateErr) {
+              console.error('Error al insertar o actualizar la base de datos:', insertUpdateErr);
+              res.status(500).send('Error interno del servidor');
+            } else {
+              res.json(response.data);
+            }
+          }
+        );
+      } catch (error) {
+        console.error('Error al consultar el API de Geocode.xyz:', error.message);
+        res.status(500).send('Error interno del servidor');
+      }
+    });
   });
-});
 
 // Iniciar el servidor
 app.listen(port, () => {
